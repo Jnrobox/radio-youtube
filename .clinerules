@@ -1,0 +1,60 @@
+IMPORTANT
+
+Start your first response with the next message:
+"✅ .clinerules loaded" 
+to confirm you read this file.
+If I ask "rules?", reply with a one-line summary of the main tech stack from this file.
+
+Your default behavior: plan only
+
+PROJECT RULES
+
+## Pre-Task Commit Rule
+Before making any file modifications or running destructive terminal commands:
+1. Check if there are unstaged changes by running `git status --porcelain`.
+2. If unstaged changes exist, run `git add . && git commit -m "checkpoint: pre-task backup [YYYY-MM-DD HH:MM:SS]"` to create a restore point.
+
+## Automated Backup Rule
+Before making any file modifications or running destructive terminal commands:
+1. Ensure a directory `.backups/` exists in the workspace root.
+2. Create a copy of the active project's g1_navi_stack_src folder(s) into `.backups/backup_<YYYYMMDD_HHMMSS>/`.
+3. Keep only the 5 most recent backup folders in `.backups/` to save disk space.
+
+## Self-Logging & Changelog Rules
+
+### Core Directive
+Before completing ANY task or making file modifications, you MUST maintain a persistent audit log in `.cline/CHANGELOG.md`.
+
+### Logging Procedure
+1. Before taking any write action, check if `.cline/CHANGELOG.md` exists. If not, create it.
+2. For EVERY user prompt or modification request, append a new entry to the top of `.cline/CHANGELOG.md`.
+3. After creating the log entry and finishing edits, execute git commit -am 'cline: <Task Title>' in the terminal.
+
+### Log Format Requirement
+Use the following format for each entry:
+
+---
+#### [YYYY-MM-DD HH:MM:SS] Task: <Brief Title of User Request>
+- **User Prompt**: "<Exact or summarized user request>"
+- **Files Modified**:
+  - `path/to/file1.ext`: <Summary of exact changes made>
+  - `path/to/file2.ext`: <Summary of exact changes made>
+- **Commands Executed**: `<terminal commands run, if any>`
+- **Rollback Instructions**: <Specific instructions or code snapshots needed to reverse these exact changes if quality degrades>
+---
+
+### Degradation & Rollback Checks
+- If the user says "check for degradation", "audit changes", or asks to "rollback", read `.cline/CHANGELOG.md` immediately.
+- To rollback: revert the files listed in the entry using the recorded state or backups or Git history.
+
+
+OVERVIEW
+
+Web site:
+https://jnrobox.github.io/radio-youtube
+
+GitHub:
+https://github.com/Jnrobox/radio-youtube
+
+This application enables background audio playback for YouTube playlists on mobile devices even with the screen turned off.
+
