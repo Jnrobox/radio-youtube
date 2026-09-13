@@ -4,7 +4,7 @@
     <script>
         // For local debug use: python3 -m http.server 8000 (http://localhost:8000)
         const AppTitleStr = "Jnrobox Radio YouTube";
-        const AppVersionStr = "2026-02-25-";
+        const AppVersionStr = "2026-09-13-";
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -82,12 +82,21 @@
         <div id="playlist-manager" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
             <div class="glass p-6 rounded-2xl w-72 max-h-[500px] flex flex-col">
                 <div class="flex justify-between items-center mb-4">
-                    <h3 class="text-sm font-bold text-white">Saved Playlists</h3>
+                    <div>
+                        <h3 class="text-sm font-bold text-white">Saved Playlists</h3>
+                        <p id="default-indicator" class="text-[9px] font-mono text-gray-600 mt-0.5 truncate" style="max-width: 180px;">Default: none</p>
+                    </div>
                     <button onclick="togglePlaylistManager()" class="text-gray-400 hover:text-white">
                         <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                     </button>
                 </div>
+                <div id="sync-status" class="text-[9px] font-mono text-gray-500 mb-2 text-center truncate"></div>
                 <div id="saved-playlists-list" class="flex-grow overflow-y-auto custom-scroll space-y-2 mb-4"></div>
+                <button onclick="syncFromYouTube()" id="sync-btn" class="w-full py-2 mb-2 bg-white/10 text-white rounded-lg text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-2" title="Sign in with Google and import playlists whose name starts with 'Radio)'">
+                    <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                    Sync from YouTube ("Radio)")
+                </button>
+                <button id="clear-default-btn" onclick="clearDefaultPlaylistUI()" class="hidden w-full py-2 mb-2 bg-white/5 text-gray-500 rounded-lg text-xs font-bold hover:bg-white/10 hover:text-red-400 transition">Clear Default</button>
                 <button onclick="addNewPlaylist()" class="w-full py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition flex items-center justify-center gap-2">
                     <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
                     Add New Playlist
@@ -109,9 +118,39 @@
         infoEl.innerHTML = `${AppTitleStr}<br><span style="color: #555;">ver. ${AppVersionStr}</span>`;
         //infoEl.classList.add('pulse-text');
         
-        // Default playlist ID (used if none saved in localStorage)
-        const DEFAULT_PLAYLIST_ID = 'PL01N4uJROxb9EpAmC4yrRug0Mv9TIpu84';
-        let PLAYLIST_ID = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+        // ==== Playlist & Google sync configuration ====
+        const GOOGLE_CLIENT_ID = '177628110222-km3t6tl1kei85qtsg2u01flm4il4kbpq.apps.googleusercontent.com';
+        const GOOGLE_API_SCOPE = 'https://www.googleapis.com/auth/youtube.readonly';
+        // Only playlists whose (trimmed) name starts with this prefix are imported by sync
+        const RADIO_PREFIX = 'Radio)';
+        // Hardcoded fallback playlist (seeds the default playlist on first run)
+        const DEFAULT_PLAYLIST_ID = 'PL01N4uJROxb-ltHoQAYr337d6ssDPxpNe';
+        const DEFAULT_PLAYLIST_NAME = 'Default Playlist';
+
+        // Default playlist helpers (localStorage key: radio_default_playlist -> {id, name})
+        function getDefaultPlaylist() { try { return JSON.parse(localStorage.getItem('radio_default_playlist')) || null; } catch(e) { return null; } }
+        function setDefaultPlaylist(id, name) { localStorage.setItem('radio_default_playlist', JSON.stringify({ id: id, name: name })); }
+        function clearDefaultPlaylist() { localStorage.removeItem('radio_default_playlist'); }
+        function getSyncHidden() { try { return JSON.parse(localStorage.getItem('radio_sync_hidden')) || []; } catch(e) { return []; } }
+
+        // First run: seed the default playlist in localStorage
+        if (localStorage.getItem('radio_default_playlist') === null) {
+            setDefaultPlaylist(DEFAULT_PLAYLIST_ID, DEFAULT_PLAYLIST_NAME);
+        }
+
+        // Startup resolution:
+        //   1) one-time session playlist (set by switchToPlaylist, consumed here)
+        //   2) default playlist (radio_default_playlist)
+        //   3) last played playlist (radio_playlist_id)
+        //   4) hardcoded fallback
+        function resolveStartupPlaylistId() {
+            const session = localStorage.getItem('radio_session_playlist');
+            if (session) { localStorage.removeItem('radio_session_playlist'); return session; }
+            const def = getDefaultPlaylist();
+            if (def && def.id) return def.id;
+            return localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+        }
+        let PLAYLIST_ID = resolveStartupPlaylistId();
         let player, isPlaying = false
         let isShuffled = localStorage.getItem('radio_shuffle') === 'true';
         let vizInterval, progressInterval, needsResume = false;
@@ -123,6 +162,12 @@
         const tag = document.createElement('script');
         tag.src = "https://www.youtube.com/iframe_api";
         document.head.appendChild(tag);
+        // Google Identity Services (YouTube account sync); loaded early so the
+        // sign-in popup opens directly from the user's click gesture.
+        const gsiTag = document.createElement('script');
+        gsiTag.src = "https://accounts.google.com/gsi/client";
+        gsiTag.async = true;
+        document.head.appendChild(gsiTag);
 
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('player', {
@@ -145,7 +190,7 @@
             
             const titleEl = document.getElementById('track-title');
             
-            if (lastPos && lastPos.index !== undefined) {
+            if (lastPos && lastPos.pid === PLAYLIST_ID && lastPos.index !== undefined) {
                 needsResume = true;
                 player.cuePlaylist({
                     listType: 'playlist', list: PLAYLIST_ID,
@@ -269,6 +314,7 @@
                 if(player.getCurrentTime && player.getDuration) {
                     const curr = player.getCurrentTime();
                     localStorage.setItem('radio_last_pos', JSON.stringify({
+                        pid: PLAYLIST_ID,
                         index: player.getPlaylistIndex(),
                         time: Math.floor(curr)
                     }));
@@ -360,8 +406,18 @@
         
         function deletePlaylistFromList(playlistId) {
             let playlists = getSavedPlaylists();
+            const target = playlists.find(p => p.id === playlistId);
             playlists = playlists.filter(p => p.id !== playlistId);
             localStorage.setItem('radio_saved_playlists', JSON.stringify(playlists));
+            // Auto-synced playlists: remember removal so the next sync doesn't re-add it
+            if (target && target.auto) {
+                const hidden = getSyncHidden();
+                if (!hidden.includes(playlistId)) hidden.push(playlistId);
+                localStorage.setItem('radio_sync_hidden', JSON.stringify(hidden));
+            }
+            // If the deleted playlist was the default, clear the default
+            const def = getDefaultPlaylist();
+            if (def && def.id === playlistId) clearDefaultPlaylist();
             renderSavedPlaylists();
         }
         
@@ -376,6 +432,8 @@
         
         function switchToPlaylist(playlistId) {
             localStorage.setItem('radio_playlist_id', playlistId);
+            // Session override: play this playlist now, but keep the default for next startup
+            localStorage.setItem('radio_session_playlist', playlistId);
             // Clear position cache when switching
             localStorage.removeItem('radio_last_pos');
             location.reload();
@@ -392,22 +450,39 @@
         function renderSavedPlaylists() {
             const container = document.getElementById('saved-playlists-list');
             const playlists = getSavedPlaylists();
-            const currentId = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+            const currentId = PLAYLIST_ID;
+            const def = getDefaultPlaylist();
+            const defId = def ? def.id : null;
+
+            // Default indicator + clear-default button visibility
+            const indicator = document.getElementById('default-indicator');
+            const clearBtn = document.getElementById('clear-default-btn');
+            const defName = defId ? ((playlists.find(p => p.id === defId) || {}).name || def.name) : null;
+            indicator.innerText = defId ? 'Default: ' + defName : 'Default: none';
+            indicator.className = 'text-[9px] font-mono mt-0.5 truncate ' + (defId ? 'text-cyan-500/70' : 'text-gray-600');
+            clearBtn.classList.toggle('hidden', !defId);
+            updateSyncStatus();
             
             if (playlists.length === 0) {
                 container.innerHTML = '<p class="text-xs text-gray-500 text-center py-4">No saved playlists yet</p>';
                 return;
             }
             
-            container.innerHTML = playlists.map(p => `
+            container.innerHTML = playlists.map((p, i) => `
                 <div class="flex items-center justify-between p-2 rounded-lg ${p.id === currentId ? 'bg-cyan-500/20 border border-cyan-500/30' : 'bg-white/5'} group">
-                    <button onclick="switchToPlaylist('${p.id}')" class="flex-grow text-left">
-                        <p class="text-xs ${p.id === currentId ? 'text-cyan-400' : 'text-gray-300'} truncate">${p.name}</p>
+                    <button onclick="switchToPlaylist('${p.id}')" class="flex-grow text-left min-w-0">
+                        <p class="text-xs ${p.id === currentId ? 'text-cyan-400' : 'text-gray-300'} truncate">${escapeHtml(p.name)}</p>
                         <p class="text-[9px] text-gray-500 font-mono truncate">${p.id}</p>
                     </button>
-                    <button onclick="deletePlaylistFromList('${p.id}')" class="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
-                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
-                    </button>
+                    <div class="flex items-center flex-shrink-0">
+                        ${p.auto ? `<span class="text-[8px] font-bold text-gray-500 bg-white/10 rounded px-1 py-0.5 mr-1" title="Auto-synced from your YouTube account">auto</span>` : ''}
+                        <button onclick="setDefaultPlaylistByIndex(${i})" class="p-1 transition ${p.id === defId ? 'text-cyan-400' : 'text-gray-600 hover:text-cyan-400 opacity-0 group-hover:opacity-100'}" title="${p.id === defId ? 'Default playlist' : 'Set as default'}">
+                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                        </button>
+                        <button onclick="deletePlaylistFromList('${p.id}')" class="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1" title="Delete from list">
+                            <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                        </button>
+                    </div>
                 </div>
             `).join('');
         }
@@ -426,12 +501,115 @@
         
         // Initialize: ensure current playlist is in the saved list
         (function initPlaylist() {
-            const currentId = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
-            if (currentId === DEFAULT_PLAYLIST_ID)
-                savePlaylistToList(currentId, 'Default Playlist');
+            const def = getDefaultPlaylist();
+            if (def && PLAYLIST_ID === def.id)
+                savePlaylistToList(PLAYLIST_ID, def.name);
             else
-                savePlaylistToList(currentId, currentId.substring(0, 15) + '...');
+                savePlaylistToList(PLAYLIST_ID, PLAYLIST_ID.substring(0, 15) + '...');
         })();
+
+        function escapeHtml(s) {
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
+        // ==== Default playlist menu actions ====
+        function setDefaultPlaylistByIndex(i) {
+            const p = getSavedPlaylists()[i];
+            if (!p) return;
+            setDefaultPlaylist(p.id, p.name);
+            renderSavedPlaylists();
+            setSyncStatus('Default set: ' + p.name, true);
+        }
+
+        function clearDefaultPlaylistUI() {
+            clearDefaultPlaylist();
+            renderSavedPlaylists();
+            setSyncStatus('Default playlist cleared', true);
+        }
+
+        // ==== Google account sync (imports playlists whose name starts with RADIO_PREFIX) ====
+        function setSyncStatus(msg, highlight = false) {
+            const el = document.getElementById('sync-status');
+            el.innerText = msg;
+            el.classList.toggle('text-cyan-400', highlight);
+            el.classList.toggle('text-gray-500', !highlight);
+        }
+
+        function updateSyncStatus() {
+            const t = parseInt(localStorage.getItem('radio_sync_time'));
+            setSyncStatus(t ? 'Last sync: ' + new Date(t).toLocaleString() : '');
+        }
+
+        let tokenClient = null;
+        function syncFromYouTube() {
+            if (!window.google || !google.accounts || !google.accounts.oauth2) {
+                setSyncStatus('Google sign-in is still loading, try again in a moment...');
+                return;
+            }
+            if (!tokenClient) {
+                tokenClient = google.accounts.oauth2.initTokenClient({
+                    client_id: GOOGLE_CLIENT_ID,
+                    scope: GOOGLE_API_SCOPE,
+                    callback: (resp) => {
+                        if (resp.error) {
+                            setSyncStatus('Sign-in failed: ' + resp.error);
+                            return;
+                        }
+                        fetchRadioPlaylists(resp.access_token);
+                    }
+                });
+            }
+            setSyncStatus('Waiting for Google sign-in...');
+            tokenClient.requestAccessToken();
+        }
+
+        async function fetchRadioPlaylists(accessToken) {
+            setSyncStatus('Syncing playlists from your account...');
+            let playlists = [];
+            let pageToken = null;
+            try {
+                do {
+                    let url = 'https://www.googleapis.com/youtube/v3/playlists?part=snippet&mine=true&maxResults=50';
+                    if (pageToken) url += '&pageToken=' + encodeURIComponent(pageToken);
+                    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + accessToken } });
+                    if (!res.ok) throw new Error('YouTube API error ' + res.status);
+                    const data = await res.json();
+                    (data.items || []).forEach(it => playlists.push({ id: it.id, name: it.snippet.title }));
+                    pageToken = data.nextPageToken || null;
+                } while (pageToken);
+            } catch (e) {
+                setSyncStatus('Sync failed: ' + e.message);
+                return;
+            }
+
+            const radioPlaylists = playlists.filter(p => p.name.trim().startsWith(RADIO_PREFIX));
+            const added = mergeRadioPlaylists(radioPlaylists);
+            localStorage.setItem('radio_sync_time', String(Date.now()));
+            renderSavedPlaylists();
+            if (radioPlaylists.length === 0)
+                setSyncStatus('Synced: no playlists start with "' + RADIO_PREFIX + '"');
+            else
+                setSyncStatus('Synced: ' + radioPlaylists.length + ' "' + RADIO_PREFIX + '" playlist(s), ' + added + ' new', true);
+        }
+
+        function mergeRadioPlaylists(radioPlaylists) {
+            const playlists = getSavedPlaylists();
+            const hidden = getSyncHidden();
+            let added = 0;
+            radioPlaylists.forEach(p => {
+                if (hidden.includes(p.id)) return;
+                const existing = playlists.find(x => x.id === p.id);
+                if (existing) {
+                    if (existing.auto) existing.name = p.name; // keep YouTube title up to date
+                    // manually added entries keep their custom name
+                } else {
+                    playlists.push({ id: p.id, name: p.name, auto: true, addedAt: Date.now() });
+                    added++;
+                }
+            });
+            localStorage.setItem('radio_saved_playlists', JSON.stringify(playlists));
+            return added;
+        }
     </script>
 </body>
 </html>
