@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>
+        // For local debug use: python3 -m http.server 8000 (http://localhost:8000)
+        const AppTitleStr = "Jnrobox Radio YouTube";
+        const AppVersionStr = "2026-02-24";
+    </script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jnrobox Radio YouTube</title>
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { background: #020617; color: #f8fafc; font-family: 'Inter', sans-serif; overflow: hidden; }
+        .glass { background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
+        .bar { transition: height 0.2s ease; width: 4px; border-radius: 99px; }
+        #player { display: none; }
+        .marquee-container { width: 100%; overflow: hidden; white-space: nowrap; }
+        .marquee { display: inline-block; padding-left: 100%; animation: marquee 15s linear infinite; }
+        @keyframes marquee { 0% { transform: translate(0, 0); } 100% { transform: translate(-100%, 0); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .pulse-text { animation: pulse 2s infinite; color: #22d3ee; }
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 10px; }
+        .playlist-item.active { color: #22d3ee; background: rgba(34, 211, 238, 0.1); border-left: 3px solid #22d3ee; }
+        input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; height: 12px; width: 12px; border-radius: 50%; background: #94a3b8; cursor: pointer; margin-top: -4px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; background: #1e293b; border-radius: 2px; }
+        .btn-active { color: #22d3ee; filter: drop-shadow(0 0 8px rgba(34, 211, 238, 0.6)); }
+    </style>
+</head>
+<body class="flex items-center justify-center min-h-screen">
+
+    <div class="glass p-8 rounded-[2.5rem] w-80 shadow-2xl border border-white/10 flex flex-col h-[650px]">
+        <div class="text-center">
+            <div id="visualizer" class="flex justify-center items-end space-x-1 h-8 mb-4">
+                <div class="bar bg-cyan-500 h-2"></div><div class="bar bg-blue-500 h-2"></div><div class="bar bg-indigo-500 h-2"></div><div class="bar bg-purple-500 h-2"></div><div class="bar bg-pink-500 h-2"></div>
+            </div>
+            <!--div class="flex justify-center mb-2">
+                <span class="text-[7px] bg-cyan-500/20 text-cyan-400 px-2 py-0.5 rounded-full font-bold tracking-widest border border-cyan-500/30">DATA SAVER ACTIVE</span>
+            </div-->
+            <h1 id="info-tag" class="text-[10px] font-black tracking-[0.3em] text-gray-500 uppercase mb-2">Player info</h1>
+            <div class="h-8 marquee-container flex items-center mb-4">
+                <p id="track-title" class="marquee text-md font-bold text-white tracking-tight">Player is ready</p>
+            </div>
+        </div>
+
+        <div class="px-2 mb-4">
+            <input type="range" id="progress-bar" min="0" max="100" value="0" oninput="seek(this.value)" class="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer accent-cyan-400 mb-1">
+            <div class="flex justify-between text-[9px] font-mono text-gray-500">
+                <span id="current-time">0:00</span>
+                <span id="total-duration">0:00</span>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between px-2 mb-6">
+            <button onclick="toggleShuffle()" id="shuffle-btn" class="text-gray-500 hover:text-white transition active:scale-90" title="Shuffle">
+                <svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.45 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
+            </button>
+            <button onclick="playPrev()" class="text-gray-400 hover:text-white transition active:scale-90"><svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18V6h2v12H6zm3.5-6L18 18V6l-8.5 6z"/></svg></button>
+            <button onclick="togglePlay()" id="play-btn" class="bg-white text-black p-4 rounded-full hover:scale-110 transition active:scale-95 shadow-lg"><svg id="play-icon" width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path id="icon-path" d="M8 5v14l11-7z"/></svg></button>
+            <button onclick="playNext()" class="text-gray-400 hover:text-white transition active:scale-90"><svg width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg></button>
+            <button onclick="resetAll()" class="text-gray-400 hover:text-white transition active:scale-90" title="Reset All"><svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+        </div>
+
+        <div class="flex items-center space-x-3 px-4 mb-8">
+            <svg class="text-gray-500" width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
+            <input type="range" id="volume-slider" min="0" max="100" value="50" oninput="changeVolume(this.value)" class="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+        </div>
+
+        <div class="flex-grow overflow-hidden flex flex-col">
+            <div class="flex justify-between items-center mb-3 px-2">
+                <h2 class="text-[12px] font-bold text-gray-500 uppercase tracking-widest">Play Queue</h2>
+                <h2 id="manage-playlists-btn" onclick="togglePlaylistManager()" class="text-[12px] font-bold text-gray-500 uppercase tracking-widest cursor-pointer hover:text-cyan-400 transition" title="Manage Playlists">PLAYLISTS</h2>
+            </div>
+            <div id="playlist-container" class="flex-grow overflow-y-auto custom-scroll space-y-2 pr-2"></div>
+        </div>
+        
+        <!-- Playlist Manager Modal -->
+        <div id="playlist-manager" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+            <div class="glass p-6 rounded-2xl w-72 max-h-[500px] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-sm font-bold text-white">Saved Playlists</h3>
+                    <button onclick="togglePlaylistManager()" class="text-gray-400 hover:text-white">
+                        <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                    </button>
+                </div>
+                <div id="saved-playlists-list" class="flex-grow overflow-y-auto custom-scroll space-y-2 mb-4"></div>
+                <button onclick="addNewPlaylist()" class="w-full py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition flex items-center justify-center gap-2">
+                    <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
+                    Add New Playlist
+                </button>
+            </div>
+        </div>
+        <div id="player"></div>
+    </div>
+
+    <script>
+        document.title = AppTitleStr;
+        console.log(AppTitleStr + ' (ver. ' + AppVersionStr + ')');
+
+        const isMobile = window.matchMedia("(max-width: 768px)").matches;
+        console.log('DEBUG: site mobile mode =', isMobile);
+
+        const infoEl = document.getElementById('info-tag');
+        //infoEl.innerText = AppTitleStr + '\nver. ' + AppVersionStr;
+        infoEl.innerHTML = `${AppTitleStr}<br><span style="color: #555;">ver. ${AppVersionStr}</span>`;
+        //infoEl.classList.add('pulse-text');
+        
+        // Default playlist ID (used if none saved in localStorage)
+        const DEFAULT_PLAYLIST_ID = 'PL01N4uJROxb9EpAmC4yrRug0Mv9TIpu84';
+        let PLAYLIST_ID = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+        let player, isPlaying = false
+        let isShuffled = localStorage.getItem('radio_shuffle') === 'true';
+        let vizInterval, progressInterval, needsResume = false;
+
+        let trackCache = JSON.parse(localStorage.getItem('radio_titles')) || {};
+        let savedVolume = localStorage.getItem('radio_volume') || 50;
+        let lastPos = JSON.parse(localStorage.getItem('radio_last_pos')) || null;
+
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+
+        function onYouTubeIframeAPIReady() {
+            player = new YT.Player('player', {
+                height: '0', width: '0',
+                playerVars: { 
+                    'listType': 'playlist', 
+                    'list': PLAYLIST_ID, 
+                    'enablejsapi': 1,
+                    'vq': 'small' // Suggest lowest quality to start
+                },
+                events: { 'onReady': onPlayerReady, 'onStateChange': onPlayerStateChange }
+            });
+        }
+
+        function onPlayerReady(event) {
+            player.setVolume(savedVolume);
+            document.getElementById('volume-slider').value = savedVolume;
+            player.setShuffle(isShuffled);
+            updateShuffleUI();
+            
+            const titleEl = document.getElementById('track-title');
+            
+            if (lastPos && lastPos.index !== undefined) {
+                needsResume = true;
+                player.cuePlaylist({
+                    listType: 'playlist', list: PLAYLIST_ID,
+                    index: lastPos.index, startSeconds: lastPos.time
+                });
+                titleEl.innerText = "TAP TO RESUME SESSION";
+                titleEl.classList.add('pulse-text');
+                window.addEventListener('click', handleFirstInteraction, { once: true });
+            } else {
+                player.cuePlaylist({ listType: 'playlist', list: PLAYLIST_ID });
+                if (isMobile) {
+                    titleEl.innerText = "Ready to play, resume from the lock screen";
+                }
+                else {
+                    titleEl.innerText = "Ready to play";
+                }
+            }
+            setTimeout(loadPlaylistUI, 1500);
+        }
+
+        function handleFirstInteraction() {
+            document.getElementById('track-title').classList.remove('pulse-text');
+            player.playVideo();
+            player.setVolume(savedVolume);
+            // Seek immediately after play to avoid race condition
+            if (lastPos && lastPos.time > 0) {
+                player.seekTo(lastPos.time, true);
+            }
+            needsResume = false;
+        }
+
+        function onPlayerStateChange(event) {
+            if (event.data == YT.PlayerState.PLAYING) {
+                // Suggest low bitrate for data saving (hint only, YouTube may override)
+                if (event.target.setPlaybackQualityHint) {
+                    event.target.setPlaybackQualityHint('small');
+                    console.log('DEBUG: requesting data saver mode (quality small/hint)');
+                }
+                else if (event.target.setPlaybackQuality) {
+                    event.target.setPlaybackQuality('small');
+                    console.log('DEBUG: requesting data saver mode (quality small)');
+                }
+                setPlayState(true);
+                const data = player.getVideoData();
+                if (data.video_id) {
+                    trackCache[data.video_id] = data.title;
+                    localStorage.setItem('radio_titles', JSON.stringify(trackCache));
+                }
+                document.getElementById('track-title').innerText = data.title;
+                updateListUI(player.getPlaylistIndex(), data.title);
+                startTimers();
+            } else if (event.data == YT.PlayerState.PAUSED) {
+                setPlayState(false);
+                stopTimers();
+            }
+        }
+
+        function toggleShuffle() {
+            isShuffled = !isShuffled;
+            localStorage.setItem('radio_shuffle', isShuffled);
+            if (player) {
+                player.setShuffle(isShuffled);
+                player.playVideoAt(player.getPlaylistIndex());
+            }
+            updateShuffleUI();
+            setTimeout(loadPlaylistUI, 800);
+        }
+
+        function updateShuffleUI() {
+            const btn = document.getElementById('shuffle-btn');
+            isShuffled ? btn.classList.add('btn-active') : btn.classList.remove('btn-active');
+        }
+
+        function setPlayState(playing) {
+            isPlaying = playing;
+            document.getElementById('icon-path').setAttribute('d', playing ? 
+                'M6 19h4V5H6v14zm8-14v14h4V5h-4z' : 'M8 5v14l11-7z');
+        }
+
+        function updateListUI(activeIndex, title) {
+            document.querySelectorAll('.playlist-item').forEach((el, idx) => {
+                el.classList.remove('active', 'text-white');
+                if (idx === activeIndex) {
+                    el.classList.add('active', 'text-white');
+                    const span = el.querySelector('.track-name');
+                    if(span) { span.innerText = title; span.classList.remove('italic'); }
+                }
+            });
+        }
+
+        function loadPlaylistUI() {
+            const list = player.getPlaylist();
+            const container = document.getElementById('playlist-container');
+            if (!list) return;
+            container.innerHTML = '';
+            list.forEach((id, index) => {
+                const item = document.createElement('div');
+                item.className = `playlist-item cursor-pointer p-2 pr-4 rounded-xl text-xs text-gray-400 hover:bg-white/5 transition flex items-center space-x-3`;
+                item.onclick = () => { needsResume = false; player.playVideoAt(index); };
+                const title = trackCache[id] || `Track ${id}`;
+                const thumbUrl = `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
+                item.innerHTML = `
+                    <div class="relative w-10 h-10 flex-shrink-0">
+                        <img src="${thumbUrl}" class="w-full h-full object-cover rounded-lg border border-white/10 opacity-80">
+                    </div>
+                    <div class="overflow-hidden">
+                        <p class="track-name truncate ${trackCache[id] ? '' : 'italic font-mono opacity-60'}">${title}</p>
+                    </div>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        function startTimers() {
+            clearInterval(vizInterval); clearInterval(progressInterval);
+            vizInterval = setInterval(() => {
+                document.querySelectorAll('.bar').forEach(bar => {
+                    bar.style.height = Math.floor(Math.random() * 25 + 5) + 'px';
+                });
+            }, 150);
+            progressInterval = setInterval(() => {
+                if(player.getCurrentTime && player.getDuration) {
+                    const curr = player.getCurrentTime();
+                    localStorage.setItem('radio_last_pos', JSON.stringify({
+                        index: player.getPlaylistIndex(),
+                        time: Math.floor(curr)
+                    }));
+                    document.getElementById('progress-bar').value = (curr / player.getDuration()) * 100;
+                    document.getElementById('current-time').innerText = formatTime(curr);
+                    document.getElementById('total-duration').innerText = formatTime(player.getDuration());
+                }
+            }, 1000);
+        }
+
+        function stopTimers() { clearInterval(vizInterval); clearInterval(progressInterval); }
+        function formatTime(s) { const m = Math.floor(s / 60); const sec = Math.floor(s % 60); return m + ":" + (sec < 10 ? "0" + sec : sec); }
+        function togglePlay() { player.getPlayerState() === 1 ? player.pauseVideo() : player.playVideo(); }
+        function playNext() { needsResume = false; player.nextVideo(); }
+        function playPrev() { needsResume = false; player.previousVideo(); }
+        function seek(val) { if(player.getDuration) player.seekTo((val / 100) * player.getDuration(), true); }
+
+        function changeVolume(v) { 
+            if (!player) return;
+            player.setVolume(v);
+            localStorage.setItem('radio_volume', v);
+            savedVolume = v;
+        }
+
+        async function resetAll() {
+            let res = await confirmPromise('Are you sure to reset all?'); 
+            if (res) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        function confirmPromise(msg){
+            return new Promise(res => {
+                let d = document.createElement('div');
+                d.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+                d.innerHTML = '<div class="glass p-6 rounded-2xl w-72 flex flex-col items-center">' +
+                            '<p class="text-sm font-bold text-white mb-4 text-center">' + msg + '</p>' +
+                            '<div class="flex gap-3">' +
+                            '<button id=y class="px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition">OK</button>' +
+                            '<button id=n class="px-4 py-2 bg-white/10 text-gray-400 rounded-lg text-xs font-bold hover:bg-white/20 transition">Cancel</button>' +
+                            '</div></div>';
+                document.body.appendChild(d);
+                d.querySelector('#y').onclick=()=>{d.remove(); res(true)};
+                d.querySelector('#n').onclick=()=>{d.remove(); res(false)};
+            });
+        }
+
+        function promptPromise(msg, defaultValue = ''){
+            return new Promise(res => {
+                let d = document.createElement('div');
+                d.className = 'fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50';
+                d.innerHTML = '<div class="glass p-6 rounded-2xl w-72 flex flex-col items-center">' +
+                            '<p class="text-sm font-bold text-white mb-4 text-center">' + msg + '</p>' +
+                            '<input id="prompt-input" type="text" value="' + defaultValue.replace(/"/g, '&quot;') + '" class="w-full px-3 py-2 mb-4 bg-white/10 text-white text-sm rounded-lg border border-white/10 focus:border-cyan-500 focus:outline-none">' +
+                            '<div class="flex gap-3">' +
+                            '<button id=y class="px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-xs font-bold hover:bg-cyan-500/30 transition">OK</button>' +
+                            '<button id=n class="px-4 py-2 bg-white/10 text-gray-400 rounded-lg text-xs font-bold hover:bg-white/20 transition">Cancel</button>' +
+                            '</div></div>';
+                document.body.appendChild(d);
+                let input = d.querySelector('#prompt-input');
+                input.focus();
+                input.select();
+                d.querySelector('#y').onclick=()=>{d.remove(); res(input.value)};
+                d.querySelector('#n').onclick=()=>{d.remove(); res(null)};
+                input.onkeydown=(e)=>{if(e.key==='Enter'){d.remove();res(input.value)}if(e.key==='Escape'){d.remove();res(null)}};
+            });
+        }
+
+        // Playlist Management Functions
+        function getSavedPlaylists() {
+            return JSON.parse(localStorage.getItem('radio_saved_playlists')) || [];
+        }
+        
+        function savePlaylistToList(playlistId, name = null) {
+            const playlists = getSavedPlaylists();
+            const existingIndex = playlists.findIndex(p => p.id === playlistId);
+            
+            if (existingIndex === -1) {
+                // Add new playlist
+                playlists.push({
+                    id: playlistId,
+                    name: name || playlistId.substring(0, 15) + '...',
+                    addedAt: Date.now()
+                });
+                localStorage.setItem('radio_saved_playlists', JSON.stringify(playlists));
+            }
+        }
+        
+        function deletePlaylistFromList(playlistId) {
+            let playlists = getSavedPlaylists();
+            playlists = playlists.filter(p => p.id !== playlistId);
+            localStorage.setItem('radio_saved_playlists', JSON.stringify(playlists));
+            renderSavedPlaylists();
+        }
+        
+        function extractPlaylistId(input) {
+            let playlistId = input.trim();
+            const listMatch = input.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+            if (listMatch) {
+                playlistId = listMatch[1];
+            }
+            return playlistId;
+        }
+        
+        function switchToPlaylist(playlistId) {
+            localStorage.setItem('radio_playlist_id', playlistId);
+            // Clear position cache when switching
+            localStorage.removeItem('radio_last_pos');
+            location.reload();
+        }
+        
+        function togglePlaylistManager() {
+            const modal = document.getElementById('playlist-manager');
+            modal.classList.toggle('hidden');
+            if (!modal.classList.contains('hidden')) {
+                renderSavedPlaylists();
+            }
+        }
+        
+        function renderSavedPlaylists() {
+            const container = document.getElementById('saved-playlists-list');
+            const playlists = getSavedPlaylists();
+            const currentId = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+            
+            if (playlists.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-500 text-center py-4">No saved playlists yet</p>';
+                return;
+            }
+            
+            container.innerHTML = playlists.map(p => `
+                <div class="flex items-center justify-between p-2 rounded-lg ${p.id === currentId ? 'bg-cyan-500/20 border border-cyan-500/30' : 'bg-white/5'} group">
+                    <button onclick="switchToPlaylist('${p.id}')" class="flex-grow text-left">
+                        <p class="text-xs ${p.id === currentId ? 'text-cyan-400' : 'text-gray-300'} truncate">${p.name}</p>
+                        <p class="text-[9px] text-gray-500 font-mono truncate">${p.id}</p>
+                    </button>
+                    <button onclick="deletePlaylistFromList('${p.id}')" class="text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition p-1">
+                        <svg width="14" height="14" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+        
+        async function addNewPlaylist() {
+            const input = await promptPromise('Enter YouTube playlist link or ID:');
+            if (input) {
+                const playlistId = extractPlaylistId(input);
+                const name = await promptPromise('Enter a name for this playlist:', playlistId.substring(0, 15));
+                if (name !== null) {
+                    savePlaylistToList(playlistId, name);
+                    renderSavedPlaylists();
+                }
+            }
+        }
+        
+        // Initialize: ensure current playlist is in the saved list
+        (function initPlaylist() {
+            const currentId = localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
+            if (currentId === DEFAULT_PLAYLIST_ID)
+                savePlaylistToList(currentId, 'Default Playlist');
+            else
+                savePlaylistToList(currentId, currentId.substring(0, 15) + '...');
+        })();
+    </script>
+</body>
+</html>
