@@ -65,7 +65,7 @@
             <button onclick="resetAll()" class="text-gray-400 hover:text-white transition active:scale-90" title="Reset All"><svg width="28" height="28" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
         </div>
 
-        <div class="flex items-center space-x-3 px-4 mb-8">
+        <div id="volume-row" class="flex items-center space-x-3 px-4 mb-8">
             <svg class="text-gray-500" width="32" height="32" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02z"/></svg>
             <input type="range" id="volume-slider" min="0" max="100" value="50" oninput="changeVolume(this.value)" class="w-full h-1 bg-gray-800 rounded-lg appearance-none cursor-pointer">
         </div>
@@ -112,6 +112,16 @@
 
         const isMobile = window.matchMedia("(max-width: 768px)").matches;
         console.log('DEBUG: site mobile mode =', isMobile);
+
+        // iOS locks audio volume to the hardware buttons (WebKit ignores programmatic
+        // volume), so the in-app volume slider does nothing there -> hide it.
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        if (isIOS) {
+            const volumeRow = document.getElementById('volume-row');
+            if (volumeRow) volumeRow.classList.add('hidden');
+            console.log('DEBUG: iOS detected - volume slider hidden (use hardware volume buttons)');
+        }
 
         const infoEl = document.getElementById('info-tag');
         //infoEl.innerText = AppTitleStr + '\nver. ' + AppVersionStr;
