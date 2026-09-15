@@ -1,6 +1,15 @@
 # Cline Changelog
 
 ---
+#### [2026-09-15 18:32:01] Task: Continue startup with last selected playlist and item
+- **User Prompt**: "When web app starts or refreshes - it should continue with last selected playlist and item" (tap-to-resume kept)
+- **Files Modified**:
+  - `index.html`:
+    - `resolveStartupPlaylistId()`: priority changed to last selected playlist (`radio_playlist_id`, if still in the saved list) → default playlist → hardcoded fallback; removed the one-time `radio_session_playlist` consumption
+    - `switchToPlaylist()`: removed the `radio_session_playlist` line (redundant now that last-played wins); just updates `radio_playlist_id`
+- **Commands Executed**: backup `.backups/backup_20260915_183201/`; headless Chrome functional test of all resolution cases
+- **Rollback Instructions**: `git checkout 730e51e -- index.html` or restore `.backups/backup_20260915_183201/index.html`. If `radio_session_playlist` key lingers in a browser, it is simply ignored (never read anymore).
+---
 #### [2026-09-13 16:51:39] Task: Playlist sync via Google OAuth + default playlist menu
 - **User Prompt**: "Change links and playlists handling logic (main goal - fetch user's lists automatically): 1) maintain same visual style; 2) set/keep default playlist in localStorage, set/delete from a menu; 3) load playlists from user's YouTube account, only playlists with name starting with 'Radio)'"
 - **Files Modified**:

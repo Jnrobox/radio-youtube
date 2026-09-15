@@ -138,17 +138,17 @@
             setDefaultPlaylist(DEFAULT_PLAYLIST_ID, DEFAULT_PLAYLIST_NAME);
         }
 
-        // Startup resolution (continue where the user left off):
-        //   1) last selected playlist (radio_playlist_id), if still in the saved list
+        // Startup resolution:
+        //   1) one-time session playlist (set by switchToPlaylist, consumed here)
         //   2) default playlist (radio_default_playlist)
-        //   3) hardcoded fallback
+        //   3) last played playlist (radio_playlist_id)
+        //   4) hardcoded fallback
         function resolveStartupPlaylistId() {
+            const session = localStorage.getItem('radio_session_playlist');
+            if (session) { localStorage.removeItem('radio_session_playlist'); return session; }
             const def = getDefaultPlaylist();
-            const last = localStorage.getItem('radio_playlist_id');
-            if (last && last === (def ? def.id : null)) return last;
-            if (last && getSavedPlaylists().some(p => p.id === last)) return last;
             if (def && def.id) return def.id;
-            return DEFAULT_PLAYLIST_ID;
+            return localStorage.getItem('radio_playlist_id') || DEFAULT_PLAYLIST_ID;
         }
         let PLAYLIST_ID = resolveStartupPlaylistId();
         let player, isPlaying = false
@@ -431,8 +431,9 @@
         }
         
         function switchToPlaylist(playlistId) {
-            // Remember as the last selected playlist; startup continues from here
             localStorage.setItem('radio_playlist_id', playlistId);
+            // Session override: play this playlist now, but keep the default for next startup
+            localStorage.setItem('radio_session_playlist', playlistId);
             // Clear position cache when switching
             localStorage.removeItem('radio_last_pos');
             location.reload();
