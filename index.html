@@ -4,7 +4,7 @@
     <script>
         // For local debug use: python3 -m http.server 8000 (http://localhost:8000)
         const AppTitleStr = "Jnrobox Radio YouTube";
-        const AppVersionStr = "2026-09-15";
+        const AppVersionStr = "2026-09-16";
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -619,6 +619,16 @@
             localStorage.setItem('radio_saved_playlists', JSON.stringify(playlists));
             return added;
         }
+
+        function calculateVolume(sliderVal) {
+            // Expects sliderVal to be a float between 0.0 and 1.0
+            if (sliderVal <= 0.30) {
+                return 1.1538 * Math.pow(sliderVal, 2);
+            } else {
+                return (0.6923 * sliderVal) - 0.1038;
+            }
+        }
+
     </script>
 </body>
 </html>
