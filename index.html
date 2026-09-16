@@ -193,7 +193,7 @@
         }
 
         function onPlayerReady(event) {
-            player.setVolume(savedVolume);
+            player.setVolume(volumeToPlayer(savedVolume));
             document.getElementById('volume-slider').value = savedVolume;
             player.setShuffle(isShuffled);
             updateShuffleUI();
@@ -344,7 +344,7 @@
 
         function changeVolume(v) { 
             if (player) {
-                player.setVolume(v); 
+                player.setVolume(volumeToPlayer(v)); 
                 localStorage.setItem('radio_volume', v);
             }
         }
@@ -621,12 +621,19 @@
         }
 
         function calculateVolume(sliderVal) {
-            // Expects sliderVal to be a float between 0.0 and 1.0
+            // Non-linear volume: slider 0-30% maps to 0-10.4% volume (fine adjustment
+            // in the quiet range); slider 30-100% maps to 10.4-100% volume.
+            // Expects sliderVal to be a float between 0.0 and 1.0, returns 0.0-1.0.
             if (sliderVal <= 0.30) {
                 return 1.1538 * Math.pow(sliderVal, 2);
             } else {
-                return (0.6923 * sliderVal) - 0.1038;
+                return (1.2802 * sliderVal) - 0.2802;
             }
+        }
+
+        function volumeToPlayer(sliderVal) {
+            // Maps the 0-100 slider value to the player's 0-100 volume via the curve
+            return Math.round(calculateVolume(sliderVal / 100) * 100);
         }
 
     </script>
